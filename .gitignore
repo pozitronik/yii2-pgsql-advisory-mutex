@@ -1,0 +1,22 @@
+# Composer
+/vendor/
+composer.lock
+
+# Testing
+coverage.xml
+.phpunit.result.cache
+.phpunit.cache/
+
+# Docker
+/docker-compose.override.yml
+
+# IDE
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
