@@ -438,4 +438,4 @@ AND blocked_locks.locktype = 'advisory';
 
 ## Лицензия
 
-GNU GPLv3.
+GNU Lesser General Public License 3.0
