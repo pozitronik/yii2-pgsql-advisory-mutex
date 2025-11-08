@@ -390,4 +390,216 @@ class PgsqlAdvisoryMutexTest extends TestCase
             return false;
         }
     }
+
+    /**
+     * Тест: getAcquiredLocks() возвращает список захваченных блокировок
+     *
+     * Сценарий: после захвата блокировок метод должен вернуть информацию
+     * о каждой блокировке, включая lockKey и sharedMode.
+     */
+    public function testGetAcquiredLocks(): void
+    {
+        $mutex = $this->createMutex();
+
+        // До захвата список пустой
+        self::assertEmpty($mutex->getAcquiredLocks(), 'Should be empty before acquiring locks');
+
+        // Захватываем блокировки
+        $mutex->acquire('test_lock_1');
+        $mutex->acquire('test_lock_2');
+
+        $locks = $mutex->getAcquiredLocks();
+
+        // Проверяем структуру
+        self::assertCount(2, $locks, 'Should have 2 acquired locks');
+        self::assertArrayHasKey('test_lock_1', $locks);
+        self::assertArrayHasKey('test_lock_2', $locks);
+
+        // Проверяем содержимое
+        self::assertArrayHasKey('lockKey', $locks['test_lock_1']);
+        self::assertArrayHasKey('sharedMode', $locks['test_lock_1']);
+        self::assertIsInt($locks['test_lock_1']['lockKey']);
+        self::assertFalse($locks['test_lock_1']['sharedMode'], 'Should be exclusive mode');
+
+        // Cleanup
+        $mutex->release('test_lock_1');
+        $mutex->release('test_lock_2');
+    }
+
+    /**
+     * Тест: getAcquiredLocks() для shared mode
+     *
+     * Сценарий: проверяем что информация о sharedMode корректно отражается в getAcquiredLocks().
+     */
+    public function testGetAcquiredLocksWithSharedMode(): void
+    {
+        $mutex = new PgsqlAdvisoryMutex(['db' => $this->db, 'sharedMode' => true]);
+
+        $mutex->acquire('shared_mode_test');
+
+        $locks = $mutex->getAcquiredLocks();
+
+        self::assertArrayHasKey('shared_mode_test', $locks);
+        self::assertTrue($locks['shared_mode_test']['sharedMode'], 'Should indicate shared mode');
+
+        $mutex->release('shared_mode_test');
+    }
+
+    /**
+     * Тест: getActiveLocks() возвращает информацию о всех advisory locks в системе
+     *
+     * Сценарий: после захвата блокировки метод должен вернуть информацию
+     * о всех активных advisory locks в PostgreSQL, включая наши.
+     */
+    public function testGetActiveLocks(): void
+    {
+        $mutex = $this->createMutex();
+
+        // Захватываем блокировку
+        $mutex->acquire('monitor_test');
+
+        // Получаем список активных блокировок
+        $activeLocks = $mutex->getActiveLocks();
+
+        // Должна быть хотя бы одна блокировка (наша)
+        self::assertNotEmpty($activeLocks, 'Should have at least one active advisory lock');
+
+        // Проверяем структуру первой блокировки
+        self::assertArrayHasKey('pid', $activeLocks[0], 'Should have pid field');
+        self::assertArrayHasKey('locktype', $activeLocks[0], 'Should have locktype field');
+        self::assertArrayHasKey('mode', $activeLocks[0], 'Should have mode field');
+        self::assertArrayHasKey('granted', $activeLocks[0], 'Should have granted field');
+        self::assertArrayHasKey('lock_key', $activeLocks[0], 'Should have lock_key field');
+        self::assertArrayHasKey('is_current_connection', $activeLocks[0], 'Should have is_current_connection field');
+
+        // Должна быть advisory блокировка
+        $hasAdvisoryLock = false;
+        foreach ($activeLocks as $lock) {
+            if ('advisory' === $lock['locktype']) {
+                $hasAdvisoryLock = true;
+                break;
+            }
+        }
+        self::assertTrue($hasAdvisoryLock, 'Should have at least one advisory lock');
+
+        // Cleanup
+        $mutex->release('monitor_test');
+    }
+
+    /**
+     * Тест: getActiveLocks() не выбрасывает исключение
+     *
+     * Сценарий: метод должен корректно работать даже при отсутствии блокировок и не выбрасывать исключений.
+     */
+    public function testGetActiveLocksDoesNotThrowException(): void
+    {
+        $mutex = $this->createMutex();
+
+        // Метод не должен выбросить исключение даже при отсутствии блокировок
+        $locks = $mutex->getActiveLocks();
+
+        self::assertIsArray($locks, 'Should return array even when empty');
+    }
+
+    /**
+     * Тест: releaseAll() освобождает все захваченные блокировки
+     *
+     * Сценарий: после захвата нескольких блокировок, releaseAll()
+     * должен освободить их все и вернуть корректное количество.
+     */
+    public function testReleaseAll(): void
+    {
+        $mutex = $this->createMutex();
+
+        // Захватываем несколько блокировок
+        $mutex->acquire('bulk_lock_1');
+        $mutex->acquire('bulk_lock_2');
+        $mutex->acquire('bulk_lock_3');
+
+        // Проверяем что блокировки захвачены
+        self::assertCount(3, $mutex->getAcquiredLocks());
+
+        // Освобождаем все
+        $count = $mutex->releaseAll();
+
+        // Проверяем результат
+        self::assertEquals(3, $count, 'Should release 3 locks');
+        self::assertEmpty($mutex->getAcquiredLocks(), 'Should have no acquired locks after releaseAll');
+    }
+
+    /**
+     * Тест: releaseAll() возвращает 0 если нет захваченных блокировок
+     *
+     * Сценарий: вызов releaseAll() без захваченных блокировок должен корректно вернуть 0.
+     */
+    public function testReleaseAllWhenNoLocks(): void
+    {
+        $mutex = $this->createMutex();
+
+        // Нет захваченных блокировок
+        self::assertEmpty($mutex->getAcquiredLocks());
+
+        $count = $mutex->releaseAll();
+
+        self::assertEquals(0, $count, 'Should release 0 locks');
+    }
+
+    /**
+     * Тест: инициализация с db как строкой (component ID)
+     *
+     * Сценарий: когда db передан как строка, mutex должен получить
+     * компонент из Yii::$app и корректно инициализироваться.
+     */
+    public function testInitWithStringDbComponent(): void
+    {
+        // Создаем mutex с db как строкой
+        $mutex = new PgsqlAdvisoryMutex(['db' => 'db']);
+
+        // Проверяем что инициализация прошла успешно и блокировка работает
+        $acquired = $mutex->acquire('component_id_test');
+        self::assertTrue($acquired, 'Should acquire lock with db component ID');
+
+        $mutex->release('component_id_test');
+    }
+
+    /**
+     * Тест: попытка освободить не захваченную блокировку
+     *
+     * Сценарий: release() на блокировке, которую мы не захватывали, должен вернуть false и залогировать предупреждение.
+     */
+    public function testReleaseNonAcquiredLock(): void
+    {
+        $mutex = $this->createMutex();
+
+        // Пытаемся освободить блокировку, которую не захватывали
+        $result = $mutex->release('never_acquired');
+
+        self::assertFalse($result, 'Should return false for non-acquired lock');
+        self::assertEmpty($mutex->getAcquiredLocks(), 'Should have no locks');
+    }
+
+    /**
+     * Тест: освобождение блокировки после внешнего закрытия транзакции
+     *
+     * Сценарий: если транзакция была закоммичена/откачена вне mutex,
+     * release() должен корректно обработать это и вернуть false.
+     */
+    public function testReleaseAfterExternalTransactionClose(): void
+    {
+        $mutex = $this->createMutex();
+
+        // Захватываем блокировку
+        $mutex->acquire('external_commit_test');
+
+        // Получаем транзакцию и коммитим её вручную (эмулируем внешнее закрытие)
+        $transaction = $this->db->getTransaction();
+        self::assertNotNull($transaction, 'Transaction should exist');
+        $transaction->commit();
+
+        // Попытка освободить - транзакция уже закрыта
+        $result = $mutex->release('external_commit_test');
+
+        self::assertFalse($result, 'Should return false when transaction already closed');
+        self::assertEmpty($mutex->getAcquiredLocks(), 'Lock should be removed from tracking');
+    }
 }
