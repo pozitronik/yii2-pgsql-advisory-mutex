@@ -85,10 +85,6 @@ class PgsqlAdvisoryMutex extends Mutex
         if (is_string($this->db)) {
             $this->db = Yii::$app->get($this->db);
         }
-
-        if (!$this->db instanceof Connection) {
-            throw new InvalidConfigException('PgsqlAdvisoryMutex::$db must be a Connection object or component ID.');
-        }
     }
 
     /**
