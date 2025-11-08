@@ -3,7 +3,7 @@
   "description": "PostgreSQL transaction-level advisory locks based mutex for Yii2",
   "type": "yii2-extension",
   "keywords": ["yii2", "mutex", "postgresql", "advisory-locks", "distributed-lock"],
-  "license": "LGPL-3.0",
+  "license": "LGPL-3.0-or-later",
   "authors": [
     {
       "name": "Pavel Dubrovsky",
