@@ -3,11 +3,11 @@
   "description": "PostgreSQL transaction-level advisory locks based mutex for Yii2",
   "type": "yii2-extension",
   "keywords": ["yii2", "mutex", "postgresql", "advisory-locks", "distributed-lock"],
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "authors": [
     {
-      "name": "pozitronik",
-      "email": "pozitronik@gmail.com"
+      "name": "Pavel Dubrovsky",
+      "email": "antikillerxxl@gmail.com"
     }
   ],
   "require": {
